@@ -1,20 +1,25 @@
 {
-	"name": "cloudflare-workers-openapi",
-	"version": "0.0.1",
-	"private": true,
-	"scripts": {
-		"deploy": "wrangler deploy",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
-		"cf-typegen": "wrangler types"
-	},
-	"dependencies": {
-		"@cloudflare/itty-router-openapi": "^1.0.1"
-	},
-	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20240614.0",
-		"@types/node": "^20.5.7",
-		"@types/service-worker-mock": "^2.0.1",
-		"wrangler": "^3.0.0"
-	}
+  "name": "cloudflare-workers-openapi",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@cloudflare/itty-router-openapi": "^1.0.1",
+    "openai": "^4.51.0"
+  },
+  "devDependencies": {
+    "@cloudflare/puppeteer": "^0.0.11",
+    "@cloudflare/workers-types": "^4.20240614.0",
+    "@types/node": "^20.5.7",
+    "@types/service-worker-mock": "^2.0.1",
+    "wrangler": "^3.60.0"
+  },
+  "overrides": {
+    "@types/node": "20.8.3"
+  }
 }
