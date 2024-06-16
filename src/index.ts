@@ -66,11 +66,6 @@ export class Browser {
     await page.setViewport({ width, height });
     await page.goto(baseUrl);
 
-    const fileName = "screenshot_" + new Date().toISOString();
-
-    const sc = await page.screenshot({ path: fileName + ".jpg" });
-    await this.env.BUCKET.put(folder + "/" + fileName + ".jpg", sc);
-
     const messages: ChatCompletionMessageParam[] = [];
     messages.push({
       role: "system",
@@ -85,6 +80,8 @@ export class Browser {
 
     do {
       const messagesSanitized = removeHtmlsFromMessages(messages);
+
+      await this.storeScreenshot(page, folder);
 
       completion = await this.openai.chat.completions.create({
         model: "gpt-4o",
@@ -154,6 +151,13 @@ export class Browser {
     }
 
     return new Response(JSON.stringify(completion?.choices[0].message.content));
+  }
+
+  private async storeScreenshot(page: puppeteer.Page, folder: string) {
+    const fileName = "screenshot_" + new Date().toISOString();
+
+    const sc = await page.screenshot({ path: fileName + ".jpg" });
+    await this.env.BUCKET.put(folder + "/" + fileName + ".jpg", sc);
   }
 
   async alarm() {
