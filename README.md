@@ -9,12 +9,14 @@ Services used:
 - [Cloudflare Browser Rendering](https://developers.cloudflare.com/browser-rendering/) - programmatically control a web browser
 - [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) - monitor requests to OpenAI (to be replaced with Workers AI 🤞, all we need is a model with bigger context window and function calling)
 - [Cloudflare R2](https://developers.cloudflare.com/r2/) - store screenshots of the interactions
+- [Baselime (acquired by Cloudflare)](https://baselime.io/) - tracing using OpenTelemetry & logging
 
 ![Cloudflare Infra](./diagram.png)
 
 ## Usage
 
 ```sh
+pnpm i
 pnpm run deploy # You can use `pnpm run dev` as well but Browser Rendering does not work locally
 curl -X POST \
   https://cloudflare-agentic-ai-browser.raf-wilinski.workers.dev \

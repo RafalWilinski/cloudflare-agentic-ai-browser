@@ -22,4 +22,8 @@ tag = "v1" # Should be unique for each entry
 new_classes = ["Browser"] # Array of new classes
 
 [vars]
-ACCOUNT_ID="fa3e82d8258ac121c26085c2a5952780"
+ACCOUNT_ID="fa3e82d8258ac121c26085c2a5952780" # replace with yours
+SERVICE_NAME = "cloudflare-agentic-ai-browser"
+
+# Baselime integration
+tail_consumers = [{service = "cloudflare-agentic-ai-browser-tail"}]

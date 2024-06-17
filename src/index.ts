@@ -4,10 +4,14 @@ import { ChatCompletion, ChatCompletionMessageParam } from "openai/resources";
 import { tools } from "./tools";
 import { systemPrompt } from "./prompts";
 
-export default {
+const handler = {
   async fetch(request, env): Promise<Response> {
     let id = env.BROWSER.idFromName("browser");
     let obj = env.BROWSER.get(id);
+
+    if (request.method !== "POST") {
+      return new Response("Please use POST request instead");
+    }
 
     let resp = await obj.fetch(request);
 
@@ -47,7 +51,8 @@ export class Browser {
     const nowDate = new Date();
     var coeff = 1000 * 60 * 5;
     var roundedDate = new Date(Math.round(nowDate.getTime() / coeff) * coeff).toString();
-    var folder = roundedDate.split(" GMT")[0];
+    var folder =
+      roundedDate.split(" GMT")[0] + "_" + baseUrl.replace("https://", "").replace("http://", "");
 
     //if there's a browser session open, re-use it
     if (!this.browser || !this.browser.isConnected()) {
@@ -181,6 +186,8 @@ export class Browser {
     }
   }
 }
+
+export default handler;
 
 /**
  * Remove scripts, duplicate spaces, return condensed HTML to minimize tokens usage
