@@ -13,7 +13,14 @@ Services used:
 
 ![Cloudflare Infra](./diagram.png)
 
-## Usage
+## Prerequisites
+
+- Node 18 or greater
+- [pnpm](https://pnpm.io/)
+- Cloudflare account with [Workers Paid Plan](https://www.cloudflare.com/pl-pl/plans/developer-platform/)
+- [OpenAI API Key](https://platform.openai.com/)
+
+## Setup & Usage
 
 ```sh
 pnpm i
