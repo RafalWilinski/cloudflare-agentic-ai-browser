@@ -17,10 +17,12 @@ Services used:
 
 ```sh
 pnpm i
+npx wrangler secret put OPENAI_API_KEY # and fill with your OpenAI key
+# You can also put it inside .dev.vars
 pnpm run deploy # You can use `pnpm run dev` as well but Browser Rendering does not work locally
 curl -X POST \
-  https://cloudflare-agentic-ai-browser.raf-wilinski.workers.dev \
-  -d '{"baseUrl": "https://bubble.io", "goal": "Extract pricing data" }' # Replace with your Worker URL, base URL and goal
+  <URL to your deployed worker> \
+  -d '{"baseUrl": "https://asana.com", "goal": "Extract pricing data" }' # Replace with your URL and goal
 ```
 
 ### The loop
