@@ -52,3 +52,9 @@ curl -X POST \
 - To prevent huge bills, Cloudflare Worker is capped at 2 requests per 10 seconds (adjustable in `wrangler.toml`)
 - GPT-4o context window allows up to 128K tokens. HTML code of many pages exceeeds that
 - Browser Rendering session is limited to 180 seconds (can be changed in code though by adjusting `KEEP_BROWSER_ALIVE_IN_SECONDS`)
+
+### Todo
+
+- [ ] Streaming responses
+- [ ] D1 databse using Drizzle to store jobs
+- [ ] nice frontend to display the results from the DB, maybe using Hono?

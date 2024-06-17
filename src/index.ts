@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { ChatCompletion, ChatCompletionMessageParam } from "openai/resources";
 import { tools } from "./tools";
 import { systemPrompt } from "./prompts";
+import { getCleanHtml, removeHtmlsFromMessages } from "./utils";
 
 const handler = {
   async fetch(request, env): Promise<Response> {
@@ -193,59 +194,3 @@ export class Browser {
 }
 
 export default handler;
-
-/**
- * Remove scripts, duplicate spaces, return condensed HTML to minimize tokens usage
- */
-async function getCleanHtml(page: Page | string): Promise<string> {
-  function removeScriptTags(html: string): string {
-    // Regular expression to match <script>...</script> tags
-    const scriptTagRegex = /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi;
-
-    // Replace the matched script tags with an empty string
-    return html.replace(scriptTagRegex, "");
-  }
-
-  function compressHtml(html: string): string {
-    // Remove newlines and leading/trailing whitespaces
-    let compressedHtml = html.replace(/\n+/g, "");
-    compressedHtml = compressedHtml.replace(/\s{2,}/g, " ");
-    compressedHtml = compressedHtml.replace(/>\s+</g, "><");
-    compressedHtml = compressedHtml.trim();
-    return compressedHtml;
-  }
-
-  const htmlWithoutScripts = removeScriptTags(
-    typeof page === "string" ? page : await page.evaluate(() => (document as any).body.innerHTML)
-  );
-
-  return `[HTML]:\n${compressHtml(htmlWithoutScripts)}`;
-}
-
-/**
- * Accumulating multiple HTML pages in messages is a recipe for a disaster (context blowup).
- * This function removes all HTML tags from the messages except for the latest one.
- */
-function removeHtmlsFromMessages(
-  messages: ChatCompletionMessageParam[]
-): ChatCompletionMessageParam[] {
-  let htmlIndex = -1;
-
-  // Find the index of the latest HTML content
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i].content && (messages[i].content as string).includes("[HTML]:")) {
-      htmlIndex = i;
-    }
-  }
-
-  // Map through messages and replace HTML content except for the latest one
-  return messages.map((m, index) => {
-    if (index !== htmlIndex && m.content && (m.content as string).includes("[HTML]:")) {
-      return {
-        ...m,
-        content: "HTML content skipped for brevity.",
-      };
-    }
-    return m;
-  });
-}
