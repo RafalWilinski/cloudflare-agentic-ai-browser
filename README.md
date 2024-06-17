@@ -10,7 +10,7 @@ Services used:
 - [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) - monitor requests to OpenAI (to be replaced with Workers AI 🤞, all we need is a model with bigger context window and function calling)
 - [Cloudflare R2](https://developers.cloudflare.com/r2/) - store screenshots of the interactions
 
-![./diagram.png](Infra)
+![Cloudflare Infra](./diagram.png)
 
 ## Usage
 
