@@ -9,6 +9,11 @@ const handler = {
     let id = env.BROWSER.idFromName("browser");
     let obj = env.BROWSER.get(id);
 
+    const { success } = await env.RATE_LIMITER.limit({ key: "/" });
+    if (!success) {
+      return new Response(`429 Failure – rate limit exceeded`, { status: 429 });
+    }
+
     if (request.method !== "POST") {
       return new Response("Please use POST request instead");
     }

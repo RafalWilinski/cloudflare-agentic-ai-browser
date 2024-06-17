@@ -39,3 +39,9 @@ curl -X POST \
   - Select something
 
 5. After each interaction, the current browser window screenshot is stored in R2. The resulting HTML (or error) is passed to the LLM to generate next step (back to 4).
+
+### Limitations
+
+- To prevent huge bills, Cloudflare Worker is capped at 2 requests per 10 seconds (adjustable in `wrangler.toml`)
+- GPT-4o context window allows up to 128K tokens. HTML code of many pages exceeeds that
+- Browser Rendering session is limited to 180 seconds (can be changed in code though by adjusting `KEEP_BROWSER_ALIVE_IN_SECONDS`)
