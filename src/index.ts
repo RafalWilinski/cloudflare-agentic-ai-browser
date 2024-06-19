@@ -8,8 +8,8 @@ import { Database } from "./db";
 
 const handler = {
   async fetch(request, env): Promise<Response> {
-    let id = env.BROWSER.idFromName("browser");
-    let obj = env.BROWSER.get(id);
+    const id = env.BROWSER.idFromName("browser");
+    const obj = env.BROWSER.get(id);
 
     const { success } = await env.RATE_LIMITER.limit({ key: "/" });
     if (!success) {
@@ -20,7 +20,7 @@ const handler = {
       return new Response("Please use POST request instead");
     }
 
-    let resp = await obj.fetch(request);
+    const resp = await obj.fetch(request);
 
     return resp;
   },

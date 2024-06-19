@@ -23,7 +23,12 @@ export class Database {
     return job;
   }
 
-  async updateJob(id: number, messages: string[], logs: string[], updatedAt: string) {
+  async updateJob(
+    id: number,
+    messages: ChatCompletionMessageParam[],
+    logs: string[],
+    updatedAt: string
+  ) {
     await this.db
       .update(jobs)
       .set({
