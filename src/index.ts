@@ -1,9 +1,12 @@
-import puppeteer, { Page } from "@cloudflare/puppeteer";
+import puppeteer from "@cloudflare/puppeteer";
+import { drizzle } from "drizzle-orm/d1";
 import OpenAI from "openai";
 import { ChatCompletion, ChatCompletionMessageParam } from "openai/resources";
 import { tools } from "./tools";
 import { systemPrompt } from "./prompts";
 import { getCleanHtml, removeHtmlsFromMessages } from "./utils";
+import { jobs } from "./schema";
+import { eq } from "drizzle-orm";
 
 const handler = {
   async fetch(request, env): Promise<Response> {
@@ -49,24 +52,46 @@ export class Browser {
   }
 
   async fetch(request: Request) {
+    const logs: string[] = [];
+    const startingTs: number = +new Date();
+
+    const log = (msg: string) => {
+      const elapsed = +new Date() - startingTs;
+      const fullMsg = `[${elapsed}ms]: ${msg}`;
+      logs.push(fullMsg);
+      console.log(fullMsg);
+    };
+
     const data: { baseUrl?: string; goal?: string } = await request.json();
     const baseUrl = data.baseUrl ?? "https://bubble.io";
     const goal = data.goal ?? "Extract pricing model for this company";
 
+    const db = drizzle(this.env.DB);
+    const job = await db
+      .insert(jobs)
+      .values({
+        goal,
+        startingUrl: baseUrl,
+        status: "running",
+      })
+      .returning({ id: jobs.id, createdAt: jobs.createdAt })
+      .all();
+    const [{ id, createdAt }] = job;
+
     // use the current date and time to create a folder structure for R2
-    const nowDate = new Date();
-    var coeff = 1000 * 60 * 5;
-    var roundedDate = new Date(Math.round(nowDate.getTime() / coeff) * coeff).toString();
-    var folder =
+    const nowDate = new Date(createdAt);
+    const coeff = 1000 * 60 * 5;
+    const roundedDate = new Date(Math.round(nowDate.getTime() / coeff) * coeff).toString();
+    const folder =
       roundedDate.split(" GMT")[0] + "_" + baseUrl.replace("https://", "").replace("http://", "");
 
-    //if there's a browser session open, re-use it
+    // If there's a browser session open, re-use it
     if (!this.browser || !this.browser.isConnected()) {
-      console.log(`Browser DO: Starting new instance`);
+      log(`Browser DO: Starting new instance`);
       try {
         this.browser = await puppeteer.launch(this.env.MYBROWSER);
       } catch (e) {
-        console.log(`Browser DO: Could not start browser instance. Error: ${e}`);
+        log(`Browser DO: Could not start browser instance. Error: ${e}`);
       }
     }
 
@@ -76,6 +101,8 @@ export class Browser {
     const page = await this.browser.newPage();
     await page.setViewport({ width, height });
     await page.goto(baseUrl);
+
+    log(`Loading page ${baseUrl}`);
 
     const messages: ChatCompletionMessageParam[] = [];
     messages.push({
@@ -92,7 +119,8 @@ export class Browser {
     do {
       const messagesSanitized = removeHtmlsFromMessages(messages);
 
-      await this.storeScreenshot(page, folder);
+      const r2Obj = await this.storeScreenshot(page, folder);
+      log(`Stored screenshot at ${r2Obj.key}`);
 
       completion = await this.openai.chat.completions.create({
         model: "gpt-4o",
@@ -115,7 +143,16 @@ export class Browser {
         const arg = functionCall?.arguments;
 
         const parsedArg = JSON.parse(arg!);
-        console.log(parsedArg.reasoning);
+        log(parsedArg.reasoning);
+
+        await db
+          .update(jobs)
+          .set({
+            messages: JSON.stringify(messages),
+            log: logs.join("\n"),
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(jobs.id, id));
 
         try {
           switch (functionCall?.name) {
@@ -147,6 +184,20 @@ export class Browser {
       }
     } while (!completion || completion?.choices[0].message.tool_calls?.[0]);
 
+    const finalAnswer = completion?.choices[0].message.content;
+    log(`Final Answer: ${finalAnswer}`);
+
+    await db
+      .update(jobs)
+      .set({
+        output: finalAnswer,
+        status: "success",
+        messages: JSON.stringify(messages),
+        log: logs.join("\n"),
+        completedAt: new Date().toISOString(),
+      })
+      .where(eq(jobs.id, id));
+
     // Close tab when there is no more work to be done on the page
     await page.close();
 
@@ -161,14 +212,14 @@ export class Browser {
       await this.storage.setAlarm(Date.now() + TEN_SECONDS);
     }
 
-    return new Response(JSON.stringify(completion?.choices[0].message.content));
+    return new Response(finalAnswer);
   }
 
   private async storeScreenshot(page: puppeteer.Page, folder: string) {
     const fileName = "screenshot_" + new Date().toISOString();
 
     const sc = await page.screenshot({ path: fileName + ".jpg" });
-    await this.env.BUCKET.put(folder + "/" + fileName + ".jpg", sc);
+    return this.env.BUCKET.put(folder + "/" + fileName + ".jpg", sc);
   }
 
   async alarm() {

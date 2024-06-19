@@ -26,7 +26,15 @@ ACCOUNT_ID="fa3e82d8258ac121c26085c2a5952780" # replace with yours
 SERVICE_NAME = "cloudflare-agentic-ai-browser"
 
 # Baselime integration
-tail_consumers = [{service = "cloudflare-agentic-ai-browser-tail"}]
+logpush = true
+tail_consumers = [
+  { service = "cloudflare-agentic-ai-browser-tail", environment = "undefined" }
+]
+
+[[d1_databases]]
+binding = "DB" 
+database_name = "ai-agent-jobs"
+database_id = "d7990af5-2803-4c69-8697-ffc0f8052ddd"
 
 # The rate limiting API is in open beta.
 [[unsafe.bindings]]

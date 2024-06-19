@@ -25,8 +25,17 @@ Services used:
 ```sh
 pnpm i
 npx wrangler secret put OPENAI_API_KEY # and fill with your OpenAI key
-# You can also put it inside .dev.vars
-pnpm run deploy # You can use `pnpm run dev` as well but Browser Rendering does not work locally
+# You can also put it inside .dev.vars (copy .dev.vars.template as a reference)
+
+# Run migrations on local SQLite instance
+npx wrangler d1 execute ai-agent-jobs --local --file=migrations/0000_init.sql
+
+# Run migrations on remote SQLite instance
+npx wrangler d1 execute ai-agent-jobs --remote --file=migrations/0000_init.sql
+
+ # You can use `pnpm run dev` as well but Browser Rendering does not work locally
+pnpm run deploy
+
 curl -X POST \
   <URL to your deployed worker> \
   -d '{"baseUrl": "https://asana.com", "goal": "Extract pricing data" }' # Replace with your URL and goal
@@ -53,8 +62,20 @@ curl -X POST \
 - GPT-4o context window allows up to 128K tokens. HTML code of many pages exceeeds that
 - Browser Rendering session is limited to 180 seconds (can be changed in code though by adjusting `KEEP_BROWSER_ALIVE_IN_SECONDS`)
 
+### Using Drizzle Studio to view and edit the database
+
+1. Create `.env` file and fill with your Cloudflare account ID, D1 Databse ID and Cloudflare D1 token with edit permissions. Use `.env.template` as a reference
+
+```sh
+cp .env.template .env
+```
+
+2. `npx drizzle-kit studio`
+3. Head to [https://local.drizzle.studio](https://local.drizzle.studio)
+
+Learn more about [Drizzle Studio](https://orm.drizzle.team/kit-docs/overview#drizzle-studio) and its [D1 configuration](https://orm.drizzle.team/learn/guides/d1-http-with-drizzle-kit)
+
 ### Todo
 
 - [ ] Streaming responses
-- [ ] D1 databse using Drizzle to store jobs
 - [ ] nice frontend to display the results from the DB, maybe using Hono?
