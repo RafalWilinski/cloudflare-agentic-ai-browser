@@ -1,12 +1,10 @@
 import puppeteer from "@cloudflare/puppeteer";
-import { drizzle } from "drizzle-orm/d1";
 import OpenAI from "openai";
 import { ChatCompletion, ChatCompletionMessageParam } from "openai/resources";
 import { tools } from "./tools";
 import { systemPrompt } from "./prompts";
 import { getCleanHtml, removeHtmlsFromMessages } from "./utils";
-import { jobs } from "./schema";
-import { eq } from "drizzle-orm";
+import { Database } from "./db";
 
 const handler = {
   async fetch(request, env): Promise<Response> {
@@ -39,6 +37,7 @@ export class Browser {
   private state: DurableObjectState;
   private storage: DurableObjectStorage;
   private openai: OpenAI;
+  private db: Database;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -49,6 +48,7 @@ export class Browser {
       apiKey: env.OPENAI_API_KEY,
       baseURL: `https://gateway.ai.cloudflare.com/v1/${env.ACCOUNT_ID}/agentic-browser-ai-gateway/openai`,
     });
+    this.db = new Database(env);
   }
 
   async fetch(request: Request) {
@@ -66,17 +66,7 @@ export class Browser {
     const baseUrl = data.baseUrl ?? "https://bubble.io";
     const goal = data.goal ?? "Extract pricing model for this company";
 
-    const db = drizzle(this.env.DB);
-    const job = await db
-      .insert(jobs)
-      .values({
-        goal,
-        startingUrl: baseUrl,
-        status: "running",
-      })
-      .returning({ id: jobs.id, createdAt: jobs.createdAt })
-      .all();
-    const [{ id, createdAt }] = job;
+    const { id, createdAt } = await this.db.insertJob(data.goal, baseUrl);
 
     // use the current date and time to create a folder structure for R2
     const nowDate = new Date(createdAt);
@@ -145,14 +135,7 @@ export class Browser {
         const parsedArg = JSON.parse(arg!);
         log(parsedArg.reasoning);
 
-        await db
-          .update(jobs)
-          .set({
-            messages: JSON.stringify(messages),
-            log: logs.join("\n"),
-            updatedAt: new Date().toISOString(),
-          })
-          .where(eq(jobs.id, id));
+        await this.db.updateJob(id, messages, logs, new Date().toISOString());
 
         try {
           switch (functionCall?.name) {
@@ -187,16 +170,7 @@ export class Browser {
     const finalAnswer = completion?.choices[0].message.content;
     log(`Final Answer: ${finalAnswer}`);
 
-    await db
-      .update(jobs)
-      .set({
-        output: finalAnswer,
-        status: "success",
-        messages: JSON.stringify(messages),
-        log: logs.join("\n"),
-        completedAt: new Date().toISOString(),
-      })
-      .where(eq(jobs.id, id));
+    await this.db.finalizeJob(id, finalAnswer, messages, logs, new Date().toISOString());
 
     // Close tab when there is no more work to be done on the page
     await page.close();
