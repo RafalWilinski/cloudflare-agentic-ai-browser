@@ -20,9 +20,11 @@ const handler = {
       return new Response("Please use POST request instead");
     }
 
-    const resp = await obj.fetch(request);
+    const response = await obj.fetch(request);
+    const { readable, writable } = new TransformStream();
+    response.body.pipeTo(writable);
 
-    return resp;
+    return new Response(readable, response);
   },
 } satisfies ExportedHandler<Env>;
 
@@ -51,22 +53,28 @@ export class Browser {
     this.db = new Database(env);
   }
 
-  async fetch(request: Request) {
+  async fetch(request: Request, env: any, ctx: ExecutionContext) {
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const textEncoder = new TextEncoder();
     const logs: string[] = [];
     const startingTs: number = +new Date();
+
+    console.log(request, env, ctx);
 
     const log = (msg: string) => {
       const elapsed = +new Date() - startingTs;
       const fullMsg = `[${elapsed}ms]: ${msg}`;
       logs.push(fullMsg);
       console.log(fullMsg);
+      writer.write(textEncoder.encode(fullMsg));
     };
 
     const data: { baseUrl?: string; goal?: string } = await request.json();
     const baseUrl = data.baseUrl ?? "https://bubble.io";
     const goal = data.goal ?? "Extract pricing model for this company";
 
-    const { id, createdAt } = await this.db.insertJob(data.goal, baseUrl);
+    const { id, createdAt } = await this.db.insertJob(goal, baseUrl);
 
     // use the current date and time to create a folder structure for R2
     const nowDate = new Date(createdAt);
@@ -87,106 +95,111 @@ export class Browser {
 
     // Reset keptAlive after each call to the DO
     this.keptAliveInSeconds = 0;
+    ctx.waitUntil(
+      (async () => {
+        const page = await this.browser.newPage();
+        await page.setViewport({ width, height });
+        await page.goto(baseUrl);
 
-    const page = await this.browser.newPage();
-    await page.setViewport({ width, height });
-    await page.goto(baseUrl);
+        log(`Loading page ${baseUrl}`);
 
-    log(`Loading page ${baseUrl}`);
+        const messages: ChatCompletionMessageParam[] = [];
+        messages.push({
+          role: "system",
+          content: systemPrompt,
+        });
+        messages.push({
+          role: "user",
+          content: `Goal: ${goal}\n${await getCleanHtml(page)}`,
+        });
 
-    const messages: ChatCompletionMessageParam[] = [];
-    messages.push({
-      role: "system",
-      content: systemPrompt,
-    });
-    messages.push({
-      role: "user",
-      content: `Goal: ${goal}\n${await getCleanHtml(page)}`,
-    });
+        let completion: ChatCompletion;
 
-    let completion: ChatCompletion;
+        do {
+          const messagesSanitized = removeHtmlsFromMessages(messages);
 
-    do {
-      const messagesSanitized = removeHtmlsFromMessages(messages);
+          const r2Obj = await this.storeScreenshot(page, folder);
+          log(`Stored screenshot at ${r2Obj.key}`);
 
-      const r2Obj = await this.storeScreenshot(page, folder);
-      log(`Stored screenshot at ${r2Obj.key}`);
+          completion = await this.openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: messagesSanitized,
+            tools,
+          });
+          const newMessage = completion.choices[0].message;
 
-      completion = await this.openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: messagesSanitized,
-        tools,
-      });
-      const newMessage = completion.choices[0].message;
-
-      // Take just one. Hack to prevent parallel function calling
-      if (newMessage.tool_calls && newMessage.tool_calls?.length > 0) {
-        newMessage.tool_calls = [newMessage.tool_calls[0]];
-      }
-
-      messages.push(newMessage);
-
-      const toolCalls = completion.choices[0].message.tool_calls || [];
-
-      for (const toolCall of toolCalls) {
-        const functionCall = toolCall.function;
-        const arg = functionCall?.arguments;
-
-        const parsedArg = JSON.parse(arg!);
-        log(parsedArg.reasoning);
-
-        await this.db.updateJob(id, messages, logs, new Date().toISOString());
-
-        try {
-          switch (functionCall?.name) {
-            case "click":
-              await page.click(parsedArg.selector);
-              break;
-            case "type":
-              await page.type(parsedArg.selector, parsedArg.value);
-              break;
-            case "select":
-              await page.select(parsedArg.selector, parsedArg.value);
-              break;
+          // Take just one. Hack to prevent parallel function calling
+          if (newMessage.tool_calls && newMessage.tool_calls?.length > 0) {
+            newMessage.tool_calls = [newMessage.tool_calls[0]];
           }
 
-          await page.waitForNavigation();
+          messages.push(newMessage);
 
-          messages.push({
-            role: "tool",
-            content: await getCleanHtml(page),
-            tool_call_id: toolCall.id,
-          });
-        } catch (error) {
-          messages.push({
-            role: "tool",
-            content: `Error: ${error.message}\n${await getCleanHtml(page)}`,
-            tool_call_id: toolCall.id,
-          });
+          const toolCalls = completion.choices[0].message.tool_calls || [];
+
+          for (const toolCall of toolCalls) {
+            const functionCall = toolCall.function;
+            const arg = functionCall?.arguments;
+
+            const parsedArg = JSON.parse(arg!);
+            log(parsedArg.reasoning);
+
+            await this.db.updateJob(id, messages, logs, new Date().toISOString());
+
+            try {
+              switch (functionCall?.name) {
+                case "click":
+                  await page.click(parsedArg.selector);
+                  break;
+                case "type":
+                  await page.type(parsedArg.selector, parsedArg.value);
+                  break;
+                case "select":
+                  await page.select(parsedArg.selector, parsedArg.value);
+                  break;
+              }
+
+              await page.waitForNavigation();
+
+              messages.push({
+                role: "tool",
+                content: await getCleanHtml(page),
+                tool_call_id: toolCall.id,
+              });
+            } catch (error) {
+              messages.push({
+                role: "tool",
+                content: `Error: ${error.message}\n${await getCleanHtml(page)}`,
+                tool_call_id: toolCall.id,
+              });
+            }
+          }
+        } while (!completion || completion?.choices[0].message.tool_calls?.[0]);
+
+        const finalAnswer = completion?.choices[0].message.content;
+        log(`Final Answer: ${finalAnswer}`);
+
+        await this.db.finalizeJob(id, finalAnswer, messages, logs, new Date().toISOString());
+
+        // Close tab when there is no more work to be done on the page
+        await page.close();
+
+        // Reset keptAlive after performing tasks to the DO.
+        this.keptAliveInSeconds = 0;
+
+        // set the first alarm to keep DO alive
+        let currentAlarm = await this.storage.getAlarm();
+        if (currentAlarm == null) {
+          console.log(`Browser DO: setting alarm`);
+          const TEN_SECONDS = 10 * 1000;
+          await this.storage.setAlarm(Date.now() + TEN_SECONDS);
         }
-      }
-    } while (!completion || completion?.choices[0].message.tool_calls?.[0]);
 
-    const finalAnswer = completion?.choices[0].message.content;
-    log(`Final Answer: ${finalAnswer}`);
+        writer.close();
+      })()
+    );
 
-    await this.db.finalizeJob(id, finalAnswer, messages, logs, new Date().toISOString());
-
-    // Close tab when there is no more work to be done on the page
-    await page.close();
-
-    // Reset keptAlive after performing tasks to the DO.
-    this.keptAliveInSeconds = 0;
-
-    // set the first alarm to keep DO alive
-    let currentAlarm = await this.storage.getAlarm();
-    if (currentAlarm == null) {
-      console.log(`Browser DO: setting alarm`);
-      const TEN_SECONDS = 10 * 1000;
-      await this.storage.setAlarm(Date.now() + TEN_SECONDS);
-    }
-
-    return new Response(finalAnswer);
+    return new Response(readable);
   }
 
   private async storeScreenshot(page: puppeteer.Page, folder: string) {
