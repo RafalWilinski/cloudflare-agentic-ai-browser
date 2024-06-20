@@ -39,7 +39,8 @@ pnpm run deploy
 
 curl -X POST \
   <URL to your deployed worker> \
-  -d '{"baseUrl": "https://asana.com", "goal": "Extract pricing data" }' # Replace with your URL and goal
+  -d '{"baseUrl": "https://chatwithcloud.ai", "goal": "Extract pricing data" }' \ # Replace with your URL and goal
+  --no-buffer
 ```
 
 ### The loop
@@ -78,5 +79,4 @@ Learn more about [Drizzle Studio](https://orm.drizzle.team/kit-docs/overview#dri
 
 ### Todo
 
-- [ ] Streaming responses
 - [ ] nice frontend to display the results from the DB, maybe using Hono?

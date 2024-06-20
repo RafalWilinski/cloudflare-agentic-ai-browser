@@ -1,4 +1,5 @@
 import { Page } from "@cloudflare/puppeteer";
+import { ChatCompletionMessageParam } from "openai/resources";
 
 export async function getCleanHtml(page: Page | string): Promise<string> {
   function removeScriptAndStyleTags(html: string): string {
