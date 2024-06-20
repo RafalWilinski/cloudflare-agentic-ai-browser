@@ -53,31 +53,29 @@ export class Browser {
     this.db = new Database(env);
   }
 
-  async fetch(request: Request, env: any, ctx: ExecutionContext) {
+  async fetch(request: Request) {
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     const textEncoder = new TextEncoder();
     const logs: string[] = [];
     const startingTs: number = +new Date();
 
-    console.log(request, env, ctx);
-
     const log = (msg: string) => {
       const elapsed = +new Date() - startingTs;
       const fullMsg = `[${elapsed}ms]: ${msg}`;
       logs.push(fullMsg);
       console.log(fullMsg);
-      writer.write(textEncoder.encode(fullMsg));
+      writer.write(textEncoder.encode(`${fullMsg}\n`));
     };
 
     const data: { baseUrl?: string; goal?: string } = await request.json();
     const baseUrl = data.baseUrl ?? "https://bubble.io";
     const goal = data.goal ?? "Extract pricing model for this company";
 
-    const { id, createdAt } = await this.db.insertJob(goal, baseUrl);
+    const { id } = await this.db.insertJob(goal, baseUrl);
 
     // use the current date and time to create a folder structure for R2
-    const nowDate = new Date(createdAt);
+    const nowDate = new Date();
     const coeff = 1000 * 60 * 5;
     const roundedDate = new Date(Math.round(nowDate.getTime() / coeff) * coeff).toString();
     const folder =
@@ -85,23 +83,27 @@ export class Browser {
 
     // If there's a browser session open, re-use it
     if (!this.browser || !this.browser.isConnected()) {
-      log(`Browser DO: Starting new instance`);
+      log(`Starting new browser instance`);
       try {
         this.browser = await puppeteer.launch(this.env.MYBROWSER);
       } catch (e) {
-        log(`Browser DO: Could not start browser instance. Error: ${e}`);
+        log(`Could not start browser instance. Error: ${e}`);
       }
     }
 
     // Reset keptAlive after each call to the DO
     this.keptAliveInSeconds = 0;
-    ctx.waitUntil(
+    this.state.waitUntil(
       (async () => {
         const page = await this.browser.newPage();
         await page.setViewport({ width, height });
+        page.setDefaultNavigationTimeout(10000);
+        page.setDefaultTimeout(10000);
         await page.goto(baseUrl);
 
-        log(`Loading page ${baseUrl}`);
+        const initialHtml = await getCleanHtml(page);
+
+        log(`Page ${baseUrl} loaded. HTML chars: ${initialHtml.length}`);
 
         const messages: ChatCompletionMessageParam[] = [];
         messages.push({
@@ -110,7 +112,7 @@ export class Browser {
         });
         messages.push({
           role: "user",
-          content: `Goal: ${goal}\n${await getCleanHtml(page)}`,
+          content: `Goal: ${goal}\n${initialHtml}`,
         });
 
         let completion: ChatCompletion;
@@ -119,7 +121,7 @@ export class Browser {
           const messagesSanitized = removeHtmlsFromMessages(messages);
 
           const r2Obj = await this.storeScreenshot(page, folder);
-          log(`Stored screenshot at ${r2Obj.key}`);
+          log(`Stored screenshot at ${r2Obj.key}. Thinking about next step...`);
 
           completion = await this.openai.chat.completions.create({
             model: "gpt-4o",
@@ -135,21 +137,21 @@ export class Browser {
 
           messages.push(newMessage);
 
+          // await this.db.updateJob(id, messages, logs, new Date().toISOString());
+
           const toolCalls = completion.choices[0].message.tool_calls || [];
 
           for (const toolCall of toolCalls) {
             const functionCall = toolCall.function;
             const arg = functionCall?.arguments;
-
             const parsedArg = JSON.parse(arg!);
-            log(parsedArg.reasoning);
 
-            await this.db.updateJob(id, messages, logs, new Date().toISOString());
+            log(`AI: ${parsedArg.reasoning} (${functionCall?.name} on ${parsedArg.selector})`);
 
             try {
               switch (functionCall?.name) {
                 case "click":
-                  await page.click(parsedArg.selector);
+                  await page.click(parsedArg.selector, {});
                   break;
                 case "type":
                   await page.type(parsedArg.selector, parsedArg.value);
@@ -159,7 +161,9 @@ export class Browser {
                   break;
               }
 
-              await page.waitForNavigation();
+              log(`Action ${functionCall?.name} on ${parsedArg.selector} succeeded`);
+
+              // await page.waitForNavigation();
 
               messages.push({
                 role: "tool",
@@ -167,6 +171,7 @@ export class Browser {
                 tool_call_id: toolCall.id,
               });
             } catch (error) {
+              log(`AI Error: ${error.message}`);
               messages.push({
                 role: "tool",
                 content: `Error: ${error.message}\n${await getCleanHtml(page)}`,
